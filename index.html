@@ -46,22 +46,6 @@
       scrollbar-width: none;
     }
     .pills::-webkit-scrollbar { display: none; }
-    .equal-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 1rem;
-    }
-    @media (min-width: 768px) {
-      .equal-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        grid-auto-rows: 1fr;
-      }
-    }
-    @media (min-width: 1100px) {
-      .equal-grid {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-      }
-    }
   </style>
 </head>
 <body class="min-h-screen font-sans text-harvest antialiased">
@@ -72,11 +56,23 @@
       <p class="text-xs font-semibold uppercase tracking-[0.28em] text-rust">Thanksgiving 2026 Feast</p>
       <h1 class="mt-3 font-display text-4xl leading-tight text-cinnamon sm:text-5xl">Give Thanks and Eat</h1>
       <p class="mt-3 max-w-xl text-base font-medium text-harvest/80 sm:text-lg">Hosted by the Dausman House of Redberry Court</p>
-      <div class="mt-6 flex flex-wrap items-center gap-3">
-        <div id="assigned-counter" class="inline-flex items-center gap-2 rounded-full bg-cinnamon px-4 py-2 text-sm font-semibold text-parchment shadow-sm">
-          <span class="h-2 w-2 rounded-full bg-amberglow"></span>
-          <span>0 of 22 Assigned</span>
+
+      <div class="mt-6 grid grid-cols-2 gap-3 sm:max-w-md">
+        <div class="rounded-2xl bg-sage px-4 py-3 text-white shadow-sm">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80">Assigned</p>
+          <p id="assigned-count" class="font-display text-3xl leading-none">0</p>
+          <p id="assigned-of" class="mt-1 text-xs text-white/80">of 22 dishes</p>
         </div>
+        <div class="rounded-2xl bg-rust px-4 py-3 text-white shadow-sm">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80">Unassigned</p>
+          <p id="unassigned-count" class="font-display text-3xl leading-none">0</p>
+          <p id="unassigned-of" class="mt-1 text-xs text-white/80">still open</p>
+        </div>
+      </div>
+
+      <div id="household-summary" class="mt-4 flex flex-wrap gap-2"></div>
+
+      <div class="mt-5">
         <a
           id="sheets-link"
           href="https://docs.google.com/spreadsheets/d/1Vr24wohBgNanuCESS1fM1S10b0pZbtxivoeqqw9ebUY"
@@ -89,23 +85,21 @@
       </div>
     </header>
 
-    <section class="mt-8">
-      <div class="mb-4 flex items-end justify-between gap-3">
-        <h2 class="font-display text-2xl text-cinnamon">Households</h2>
-        <p class="text-sm text-harvest/60">Who is bringing what</p>
-      </div>
-      <div id="household-grid" class="equal-grid"></div>
-    </section>
-
     <section class="mt-10">
       <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 class="font-display text-2xl text-cinnamon">Dish board</h2>
-          <p class="text-sm text-harvest/60">Tap a category to filter the feast</p>
+          <p class="text-sm text-harvest/60">Filter by household, then by dish type</p>
         </div>
         <p id="sync-status" class="text-xs font-medium uppercase tracking-wider text-sage">Loading the menu…</p>
       </div>
+
+      <p class="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-harvest/55">Household</p>
+      <div id="household-pills" class="pills mb-5 flex gap-2 overflow-x-auto pb-1"></div>
+
+      <p class="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-harvest/55">Category</p>
       <div id="category-pills" class="pills mb-5 flex gap-2 overflow-x-auto pb-1"></div>
+
       <div id="dish-list" class="space-y-3"></div>
     </section>
   </div>
@@ -118,14 +112,16 @@
       "/gviz/tq?tqx=responseHandler:handleSheetResponse&sheet=Dishes";
     const TOTAL_DISHES = 22;
     const HOUSEHOLDS = [
-      { name: "Greg & Danielle", accent: "from-[#8b4513] to-[#b4532a]" },
-      { name: "Ron & Denise", accent: "from-[#6b7f5a] to-[#8a9a74]" },
-      { name: "Eric & Cathy", accent: "from-[#b4532a] to-[#d4a017]" },
-      { name: "Joey, Kim, & Emerie", accent: "from-[#d4a017] to-[#c47a2c]" },
+      { name: "Greg & Danielle", color: "#8b4513", soft: "rgba(139, 69, 19, 0.12)" },
+      { name: "Ron & Denise", color: "#6b7f5a", soft: "rgba(107, 127, 90, 0.14)" },
+      { name: "Eric & Cathy", color: "#b4532a", soft: "rgba(180, 83, 42, 0.14)" },
+      { name: "Joey, Kim, & Emerie", color: "#d4a017", soft: "rgba(212, 160, 23, 0.18)" },
     ];
+    const UNASSIGNED = { name: "Unassigned", color: "#7a6a58", soft: "rgba(122, 106, 88, 0.12)" };
     const CATEGORIES = ["All", "Appetizers", "Main dish", "Side Dish", "Dessert", "Drinks"];
 
     let dishes = [];
+    let activeHousehold = "All";
     let activeCategory = "All";
 
     function cell(row, index) {
@@ -139,7 +135,15 @@
     }
 
     function isAssigned(dish) {
-      return Boolean(dish.assignedTo) || /assigned/i.test(dish.status);
+      const who = (dish.assignedTo || "").trim();
+      return Boolean(who) && !/^unassigned$/i.test(who);
+    }
+
+    function householdFor(dish) {
+      if (!isAssigned(dish)) return UNASSIGNED;
+      return HOUSEHOLDS.find(function (house) {
+        return house.name === dish.assignedTo;
+      }) || { name: dish.assignedTo, color: "#8b4513", soft: "rgba(139, 69, 19, 0.12)" };
     }
 
     window.handleSheetResponse = function handleSheetResponse(payload) {
@@ -163,75 +167,96 @@
       render();
     };
 
-    function householdDishes(name) {
-      return dishes.filter(function (dish) {
-        return dish.assignedTo === name;
+    function matchesHousehold(dish) {
+      if (activeHousehold === "All") return true;
+      if (activeHousehold === "Unassigned") return !isAssigned(dish);
+      return dish.assignedTo === activeHousehold;
+    }
+
+    function renderHeader() {
+      const assigned = dishes.filter(isAssigned);
+      const total = dishes.length || TOTAL_DISHES;
+      const unassigned = total - assigned.length;
+      document.getElementById("assigned-count").textContent = String(assigned.length);
+      document.getElementById("unassigned-count").textContent = String(unassigned);
+      document.getElementById("assigned-of").textContent = "of " + total + " dishes";
+      document.getElementById("unassigned-of").textContent = unassigned === 1 ? "still open" : "still open";
+
+      const summary = document.getElementById("household-summary");
+      const chips = HOUSEHOLDS.map(function (house) {
+        const count = dishes.filter(function (dish) {
+          return dish.assignedTo === house.name;
+        }).length;
+        return (
+          '<button type="button" data-household="' +
+          escapeHtml(house.name) +
+          '" class="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1.5 text-xs font-semibold shadow-sm backdrop-blur">' +
+          '<span class="h-2.5 w-2.5 rounded-full" style="background:' +
+          house.color +
+          '"></span>' +
+          '<span style="color:' +
+          house.color +
+          '">' +
+          escapeHtml(house.name) +
+          "</span>" +
+          '<span class="text-harvest/60">' +
+          count +
+          "</span>" +
+          "</button>"
+        );
+      }).join("");
+      summary.innerHTML = chips;
+      summary.querySelectorAll("button").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          activeHousehold = btn.getAttribute("data-household");
+          render();
+        });
       });
     }
 
-    function renderCounter() {
-      const assigned = dishes.filter(isAssigned).length;
-      const total = dishes.length || TOTAL_DISHES;
-      document.querySelector("#assigned-counter span:last-child").textContent =
-        assigned + " of " + total + " Assigned";
-    }
-
-    function renderHouseholds() {
-      const grid = document.getElementById("household-grid");
-      grid.innerHTML = HOUSEHOLDS.map(function (house) {
-        const assigned = householdDishes(house.name);
-        const list = assigned.length
-          ? assigned
-              .map(function (dish) {
-                return (
-                  '<li class="flex items-start justify-between gap-2 py-1.5">' +
-                  '<span class="font-medium">' +
-                  escapeHtml(dish.dish) +
-                  "</span>" +
-                  (isGlutenFree(dish.glutenFree)
-                    ? '<span class="shrink-0 rounded bg-sage px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">GF</span>'
-                    : "") +
-                  "</li>"
-                );
-              })
-              .join("")
-          : '<li class="py-6 text-center text-sm italic text-harvest/45">To be assigned</li>';
+    function pillButton(label, on, color) {
+      if (on) {
         return (
-          '<article class="flex h-full min-h-[220px] flex-col overflow-hidden rounded-2xl border border-cinnamon/10 bg-white/80 shadow-card backdrop-blur">' +
-          '<div class="bg-gradient-to-r ' +
-          house.accent +
-          ' px-4 py-3">' +
-          '<h3 class="font-display text-lg text-white">' +
-          escapeHtml(house.name) +
-          "</h3>" +
-          '<p class="text-xs font-medium text-white/80">' +
-          assigned.length +
-          (assigned.length === 1 ? " dish" : " dishes") +
-          "</p>" +
-          "</div>" +
-          '<ul class="flex-1 px-4 py-3 text-sm">' +
-          list +
-          "</ul>" +
-          "</article>"
-        );
-      }).join("");
-    }
-
-    function renderPills() {
-      const wrap = document.getElementById("category-pills");
-      wrap.innerHTML = CATEGORIES.map(function (cat) {
-        const on = cat === activeCategory;
-        return (
-          '<button type="button" data-category="' +
-          escapeHtml(cat) +
-          '" class="whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition ' +
-          (on
-            ? "bg-cinnamon text-parchment shadow-sm"
-            : "border border-cinnamon/15 bg-white/70 text-cinnamon hover:bg-white") +
+          '<button type="button" class="whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm" style="background:' +
+          color +
           '">' +
-          escapeHtml(cat) +
+          escapeHtml(label) +
           "</button>"
         );
+      }
+      return (
+        '<button type="button" class="whitespace-nowrap rounded-full border bg-white/70 px-4 py-2 text-sm font-semibold transition hover:bg-white" style="border-color:' +
+        color +
+        "33;color:" +
+        color +
+        '">' +
+        escapeHtml(label) +
+        "</button>"
+      );
+    }
+
+    function renderHouseholdPills() {
+      const wrap = document.getElementById("household-pills");
+      const options = [{ name: "All", color: "#8b4513" }].concat(HOUSEHOLDS).concat([UNASSIGNED]);
+      wrap.innerHTML = options
+        .map(function (house) {
+          const btn = pillButton(house.name, house.name === activeHousehold, house.color);
+          return btn.replace("<button", '<button data-household="' + escapeHtml(house.name) + '"');
+        })
+        .join("");
+      wrap.querySelectorAll("button").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          activeHousehold = btn.getAttribute("data-household");
+          render();
+        });
+      });
+    }
+
+    function renderCategoryPills() {
+      const wrap = document.getElementById("category-pills");
+      wrap.innerHTML = CATEGORIES.map(function (cat) {
+        const btn = pillButton(cat, cat === activeCategory, "#8b4513");
+        return btn.replace("<button", '<button data-category="' + escapeHtml(cat) + '"');
       }).join("");
       wrap.querySelectorAll("button").forEach(function (btn) {
         btn.addEventListener("click", function () {
@@ -241,31 +266,22 @@
       });
     }
 
-    function statusBadge(dish) {
-      if (isAssigned(dish)) {
-        return (
-          '<span class="rounded-full bg-sage/15 px-2.5 py-1 text-xs font-semibold text-sage">' +
-          escapeHtml(dish.assignedTo || dish.status || "Assigned") +
-          "</span>"
-        );
-      }
-      return '<span class="rounded-full bg-rust/10 px-2.5 py-1 text-xs font-semibold text-rust">Unassigned</span>';
-    }
-
     function renderDishes() {
       const list = document.getElementById("dish-list");
       const visible = dishes.filter(function (dish) {
-        return activeCategory === "All" || dish.category === activeCategory;
+        const catOk = activeCategory === "All" || dish.category === activeCategory;
+        return catOk && matchesHousehold(dish);
       });
       if (!visible.length) {
         list.innerHTML =
-          '<p class="rounded-2xl border border-dashed border-cinnamon/20 bg-white/50 px-4 py-10 text-center text-sm text-harvest/60">No dishes in this category yet.</p>';
+          '<p class="rounded-2xl border border-dashed border-cinnamon/20 bg-white/50 px-4 py-10 text-center text-sm text-harvest/60">No dishes match these filters.</p>';
         return;
       }
       list.innerHTML = visible
         .map(function (dish) {
+          const house = householdFor(dish);
           const gf = isGlutenFree(dish.glutenFree)
-            ? '<span class="rounded bg-sage px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">GF</span>'
+            ? '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white" style="background:#6b7f5a">GF</span>'
             : "";
           const oven = dish.oven
             ? '<span class="text-xs text-harvest/65">Oven: ' + escapeHtml(dish.oven) + "</span>"
@@ -274,7 +290,13 @@
             ? '<p class="mt-1 text-xs text-harvest/55">' + escapeHtml(dish.notes) + "</p>"
             : "";
           return (
-            '<article class="rounded-2xl border border-cinnamon/10 bg-white/80 px-4 py-3 shadow-sm">' +
+            '<article class="rounded-2xl border bg-white/80 px-4 py-3 shadow-sm" style="border-color:' +
+            house.color +
+            "33;border-left:6px solid " +
+            house.color +
+            ";background:" +
+            house.soft +
+            '">' +
             '<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">' +
             '<div class="min-w-0">' +
             '<div class="flex flex-wrap items-center gap-2">' +
@@ -292,7 +314,11 @@
             notes +
             "</div>" +
             '<div class="shrink-0">' +
-            statusBadge(dish) +
+            '<span class="rounded-full px-2.5 py-1 text-xs font-semibold text-white" style="background:' +
+            house.color +
+            '">' +
+            escapeHtml(house.name) +
+            "</span>" +
             "</div>" +
             "</div>" +
             "</article>"
@@ -310,9 +336,9 @@
     }
 
     function render() {
-      renderCounter();
-      renderHouseholds();
-      renderPills();
+      renderHeader();
+      renderHouseholdPills();
+      renderCategoryPills();
       renderDishes();
     }
 
