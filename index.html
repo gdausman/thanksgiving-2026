@@ -4,6 +4,21 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Give Thanks and Eat · Thanksgiving 2026</title>
+  <script>
+    window.__BUILD__ = "2026-11-06-d";
+    (function () {
+      fetch("version.json?cb=" + Date.now(), { cache: "no-store" })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data || !data.build || data.build === window.__BUILD__) return;
+          var url = new URL(window.location.href);
+          if (url.searchParams.get("v") === data.build) return;
+          url.searchParams.set("v", data.build);
+          window.location.replace(url.toString());
+        })
+        .catch(function () {});
+    })();
+  </script>
   <meta name="description" content="Thanksgiving 2026 Feast hosted by the Dausman House of Redberry Court" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
