@@ -53,7 +53,16 @@
     <header class="relative overflow-hidden rounded-3xl border border-amberglow/25 bg-gradient-to-br from-[#fff8ea] via-[#f4e0c4] to-[#e8c9a0] px-5 py-8 shadow-card sm:px-10 sm:py-10">
       <div class="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-rust/10"></div>
       <div class="pointer-events-none absolute bottom-0 left-8 h-24 w-24 rounded-full bg-sage/15"></div>
-      <p class="text-xs font-semibold uppercase tracking-[0.28em] text-rust">Thanksgiving 2026 Feast</p>
+      <a
+        id="sheets-link"
+        href="https://docs.google.com/spreadsheets/d/1Vr24wohBgNanuCESS1fM1S10b0pZbtxivoeqqw9ebUY"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="absolute right-4 top-4 z-10 inline-flex items-center gap-1 rounded-full border border-cinnamon/20 bg-white/80 px-3 py-1.5 text-xs font-semibold text-cinnamon backdrop-blur transition hover:bg-white sm:right-6 sm:top-6 sm:px-4 sm:py-2 sm:text-sm"
+      >
+        Update in Google Sheets ↗
+      </a>
+      <p class="pr-36 text-xs font-semibold uppercase tracking-[0.28em] text-rust sm:pr-52">Thanksgiving 2026 Feast</p>
       <h1 class="mt-3 font-display text-4xl leading-tight text-cinnamon sm:text-5xl">Give Thanks and Eat</h1>
       <p class="mt-3 max-w-xl text-base font-medium text-harvest/80 sm:text-lg">Hosted by the Dausman House of Redberry Court</p>
 
@@ -69,27 +78,13 @@
           <p id="unassigned-of" class="mt-1 text-xs text-white/80">still open</p>
         </div>
       </div>
-
-      <div id="household-summary" class="mt-4 flex flex-wrap gap-2"></div>
-
-      <div class="mt-5">
-        <a
-          id="sheets-link"
-          href="https://docs.google.com/spreadsheets/d/1Vr24wohBgNanuCESS1fM1S10b0pZbtxivoeqqw9ebUY"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="inline-flex items-center gap-1 rounded-full border border-cinnamon/20 bg-white/70 px-4 py-2 text-sm font-semibold text-cinnamon backdrop-blur transition hover:bg-white"
-        >
-          Edit in Google Sheets ↗
-        </a>
-      </div>
     </header>
 
     <section class="mt-10">
       <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 class="font-display text-2xl text-cinnamon">Dish board</h2>
-          <p class="text-sm text-harvest/60">Filter by household, then by dish type</p>
+          <p class="text-sm text-harvest/60">Filter by household, dish type, or gluten-free</p>
         </div>
         <p id="sync-status" class="text-xs font-medium uppercase tracking-wider text-sage">Loading the menu…</p>
       </div>
@@ -100,7 +95,10 @@
       <p class="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-harvest/55">Category</p>
       <div id="category-pills" class="pills mb-5 flex gap-2 overflow-x-auto pb-1"></div>
 
-      <div id="dish-list" class="space-y-3"></div>
+      <p class="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-harvest/55">Gluten</p>
+      <div id="gluten-pills" class="pills mb-5 flex gap-2 overflow-x-auto pb-1"></div>
+
+      <div id="dish-list" class="space-y-10"></div>
     </section>
   </div>
 
@@ -119,10 +117,23 @@
     ];
     const UNASSIGNED = { name: "Unassigned", color: "#7a6a58", soft: "rgba(122, 106, 88, 0.12)" };
     const CATEGORIES = ["All", "Appetizers", "Main dish", "Side Dish", "Dessert", "Drinks"];
+    const SECTION_LABELS = {
+      Appetizers: "Appetizers",
+      "Main dish": "Main Dish",
+      "Side Dish": "Sides",
+      Dessert: "Dessert",
+      Drinks: "Drinks",
+    };
+    const GLUTEN_FILTERS = [
+      { name: "All", color: "#8b4513" },
+      { name: "Gluten-Free", color: "#6b7f5a" },
+      { name: "Contains Gluten", color: "#b4532a" },
+    ];
 
     let dishes = [];
     let activeHousehold = "All";
     let activeCategory = "All";
+    let activeGluten = "All";
 
     function cell(row, index) {
       const col = row.c && row.c[index];
@@ -144,6 +155,63 @@
       return HOUSEHOLDS.find(function (house) {
         return house.name === dish.assignedTo;
       }) || { name: dish.assignedTo, color: "#8b4513", soft: "rgba(139, 69, 19, 0.12)" };
+    }
+
+    function dishIcon(dish, color) {
+      const n = ((dish && dish.dish) || "").toLowerCase();
+      const cat = ((dish && dish.category) || "").toLowerCase();
+      const rules = [
+        [/veggie|broccoli|salad/, "🥦"],
+        [/\bdeviled\b|\beggs?\b/, "🥚"],
+        [/chip|nacho|pretzel/, "🫓"],
+        [/pickle/, "🥒"],
+        [/olive/, "🫒"],
+        [/turkey(?!.*gravy)|ham(?!burger)|roast/, "🦃"],
+        [/macaroni|\bmac\b|mac n|mac-n|pasta|noodle/, "🍝"],
+        [/gravy|soup|broth/, "🥣"],
+        [/mash|potato(?!.*sweet)/, "🥔"],
+        [/gluten.*stuffing|gf.*stuffing/, "🧱"],
+        [/stuffing|dressing/, "🍞"],
+        [/green bean|bean/, "🫛"],
+        [/canberr|canned/, "🥫"],
+        [/cran/, "🍓"],
+        [/gluten.*roll|gf.*roll/, "🪨"],
+        [/roll|biscuit|bun/, "🥖"],
+        [/sweet potato|yam/, "🍠"],
+        [/corn/, "🌽"],
+        [/pie|cobbler|crisp/, "🥧"],
+        [/cake|cupcake/, "🍰"],
+        [/cookie|brownie/, "🍪"],
+        [/whip|ice cream|gelato/, "🍦"],
+        [/wine/, "🍷"],
+        [/cider|martinelli|champagne|sparkling/, "🥂"],
+        [/beer/, "🍺"],
+        [/coffee|tea/, "☕"],
+        [/soda|pop|juice/, "🥤"],
+        [/cheese/, "🧀"],
+      ];
+      let emoji = "";
+      for (let i = 0; i < rules.length; i++) {
+        if (rules[i][0].test(n)) {
+          emoji = rules[i][1];
+          break;
+        }
+      }
+      if (!emoji) {
+        if (cat.indexOf("appetizer") !== -1) emoji = "🧀";
+        else if (cat.indexOf("main") !== -1) emoji = "🍽️";
+        else if (cat.indexOf("side") !== -1) emoji = "🥗";
+        else if (cat.indexOf("dessert") !== -1) emoji = "🍰";
+        else if (cat.indexOf("drink") !== -1) emoji = "🥤";
+        else emoji = "🍽️";
+      }
+      return (
+        '<span class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-2xl leading-none" style="background:' +
+        color +
+        '1f">' +
+        emoji +
+        "</span>"
+      );
     }
 
     window.handleSheetResponse = function handleSheetResponse(payload) {
@@ -180,38 +248,7 @@
       document.getElementById("assigned-count").textContent = String(assigned.length);
       document.getElementById("unassigned-count").textContent = String(unassigned);
       document.getElementById("assigned-of").textContent = "of " + total + " dishes";
-      document.getElementById("unassigned-of").textContent = unassigned === 1 ? "still open" : "still open";
-
-      const summary = document.getElementById("household-summary");
-      const chips = HOUSEHOLDS.map(function (house) {
-        const count = dishes.filter(function (dish) {
-          return dish.assignedTo === house.name;
-        }).length;
-        return (
-          '<button type="button" data-household="' +
-          escapeHtml(house.name) +
-          '" class="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1.5 text-xs font-semibold shadow-sm backdrop-blur">' +
-          '<span class="h-2.5 w-2.5 rounded-full" style="background:' +
-          house.color +
-          '"></span>' +
-          '<span style="color:' +
-          house.color +
-          '">' +
-          escapeHtml(house.name) +
-          "</span>" +
-          '<span class="text-harvest/60">' +
-          count +
-          "</span>" +
-          "</button>"
-        );
-      }).join("");
-      summary.innerHTML = chips;
-      summary.querySelectorAll("button").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          activeHousehold = btn.getAttribute("data-household");
-          render();
-        });
-      });
+      document.getElementById("unassigned-of").textContent = "still open";
     }
 
     function pillButton(label, on, color) {
@@ -266,62 +303,111 @@
       });
     }
 
+    function renderGlutenPills() {
+      const wrap = document.getElementById("gluten-pills");
+      wrap.innerHTML = GLUTEN_FILTERS.map(function (item) {
+        const btn = pillButton(item.name, item.name === activeGluten, item.color);
+        return btn.replace("<button", '<button data-gluten="' + escapeHtml(item.name) + '"');
+      }).join("");
+      wrap.querySelectorAll("button").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          activeGluten = btn.getAttribute("data-gluten");
+          render();
+        });
+      });
+    }
+
+    function dishCard(dish) {
+      const house = householdFor(dish);
+      const gf = isGlutenFree(dish.glutenFree)
+        ? '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white" style="background:#6b7f5a">GF</span>'
+        : "";
+      const oven = dish.oven
+        ? '<p class="mt-1 text-[11px] leading-snug text-harvest/65">Oven: ' + escapeHtml(dish.oven) + "</p>"
+        : "";
+      const notes = dish.notes
+        ? '<p class="mt-1 text-[11px] leading-snug text-harvest/55">' + escapeHtml(dish.notes) + "</p>"
+        : "";
+      return (
+        '<article class="flex h-full rounded-2xl border bg-white/85 p-3 shadow-card" style="border-color:' +
+        house.color +
+        "40;border-top:5px solid " +
+        house.color +
+        '">' +
+        '<div class="flex w-full items-start gap-2.5">' +
+        dishIcon(dish, house.color) +
+        '<div class="flex min-w-0 flex-1 flex-col">' +
+        '<div class="flex flex-wrap items-center gap-1.5">' +
+        '<h3 class="font-display text-base leading-tight text-cinnamon">' +
+        escapeHtml(dish.dish) +
+        "</h3>" +
+        gf +
+        "</div>" +
+        '<div class="mt-auto flex items-end justify-between gap-2 pt-2">' +
+        '<div class="min-w-0">' +
+        oven +
+        notes +
+        "</div>" +
+        '<span class="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white" style="background:' +
+        house.color +
+        '">' +
+        escapeHtml(house.name) +
+        "</span>" +
+        "</div>" +
+        "</div>" +
+        "</div>" +
+        "</article>"
+      );
+    }
+
     function renderDishes() {
       const list = document.getElementById("dish-list");
       const visible = dishes.filter(function (dish) {
         const catOk = activeCategory === "All" || dish.category === activeCategory;
-        return catOk && matchesHousehold(dish);
+        const gf = isGlutenFree(dish.glutenFree);
+        const glutenOk =
+          activeGluten === "All" ||
+          (activeGluten === "Gluten-Free" && gf) ||
+          (activeGluten === "Contains Gluten" && !gf);
+        return catOk && glutenOk && matchesHousehold(dish);
       });
       if (!visible.length) {
+        list.className = "";
         list.innerHTML =
           '<p class="rounded-2xl border border-dashed border-cinnamon/20 bg-white/50 px-4 py-10 text-center text-sm text-harvest/60">No dishes match these filters.</p>';
         return;
       }
-      list.innerHTML = visible
-        .map(function (dish) {
-          const house = householdFor(dish);
-          const gf = isGlutenFree(dish.glutenFree)
-            ? '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white" style="background:#6b7f5a">GF</span>'
-            : "";
-          const oven = dish.oven
-            ? '<span class="text-xs text-harvest/65">Oven: ' + escapeHtml(dish.oven) + "</span>"
-            : "";
-          const notes = dish.notes
-            ? '<p class="mt-1 text-xs text-harvest/55">' + escapeHtml(dish.notes) + "</p>"
-            : "";
+      const sections = CATEGORIES.filter(function (cat) {
+        return cat !== "All";
+      });
+      list.className = "space-y-10";
+      list.innerHTML = sections
+        .map(function (cat, index) {
+          const items = visible.filter(function (dish) {
+            return dish.category === cat;
+          });
+          if (!items.length) return "";
+          const label = SECTION_LABELS[cat] || cat;
+          const rule =
+            index === 0
+              ? ""
+              : '<div class="mb-6 h-px bg-gradient-to-r from-transparent via-cinnamon/30 to-transparent"></div>';
           return (
-            '<article class="rounded-2xl border bg-white/80 px-4 py-3 shadow-sm" style="border-color:' +
-            house.color +
-            "33;border-left:6px solid " +
-            house.color +
-            ";background:" +
-            house.soft +
-            '">' +
-            '<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">' +
-            '<div class="min-w-0">' +
-            '<div class="flex flex-wrap items-center gap-2">' +
-            '<h3 class="font-display text-lg text-cinnamon">' +
-            escapeHtml(dish.dish) +
+            rule +
+            '<section>' +
+            '<div class="mb-4 flex items-baseline justify-between gap-3">' +
+            '<h3 class="font-display text-2xl text-cinnamon">' +
+            escapeHtml(label) +
             "</h3>" +
-            gf +
-            "</div>" +
-            '<div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">' +
-            '<span class="text-xs font-semibold uppercase tracking-wider text-amberglow">' +
-            escapeHtml(dish.category) +
-            "</span>" +
-            oven +
-            "</div>" +
-            notes +
-            "</div>" +
-            '<div class="shrink-0">' +
-            '<span class="rounded-full px-2.5 py-1 text-xs font-semibold text-white" style="background:' +
-            house.color +
-            '">' +
-            escapeHtml(house.name) +
+            '<span class="text-xs font-semibold uppercase tracking-[0.18em] text-harvest/45">' +
+            items.length +
+            (items.length === 1 ? " dish" : " dishes") +
             "</span>" +
             "</div>" +
+            '<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">' +
+            items.map(dishCard).join("") +
             "</div>" +
-            "</article>"
+            "</section>"
           );
         })
         .join("");
@@ -339,6 +425,7 @@
       renderHeader();
       renderHouseholdPills();
       renderCategoryPills();
+      renderGlutenPills();
       renderDishes();
     }
 
